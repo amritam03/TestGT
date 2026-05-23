@@ -1,19 +1,18 @@
 import os
+import requests
 
-bot = os.getenv("BOT_TOKEN")
-chat = os.getenv("CHAT_ID")
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+CHAT_ID = os.getenv("CHAT_ID")
 
-print("=== DEBUG START ===")
+url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
 
-if bot:
-    print("BOT exists: YES")
-    print("BOT first chars:", bot[:8])
-else:
-    print("BOT exists: NO")
+r = requests.post(
+    url,
+    data={
+        "chat_id": CHAT_ID,
+        "text": "🎉 GitHub + Telegram finally connected!"
+    }
+)
 
-if chat:
-    print("CHAT:", chat)
-else:
-    print("CHAT: MISSING")
-
-print("=== DEBUG END ===")
+print("STATUS:", r.status_code)
+print("RESPONSE:", r.text)
