@@ -1,107 +1,95 @@
+from playwright.sync_api import sync_playwright
 import requests
-from bs4 import BeautifulSoup
 import os
 import json
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
 
-BASE = "https://www.karzanddolls.com"
+URL = "https://www.karzanddolls.com/details/mini+gt+/mini-gt/MTY1"
 
-# Actual Mini GT listings page
-URL = "https://www.karzanddolls.com/details/mini+gt+/mini-gt/584a9174094561d2887298e8db583ec307aac8568640e1a6630e7383bb3f8817d39cc8ba615fa8fd330999d32c2677354350185ca7c076241f55f8892db3776a4CArOJdO0gY2NwetVohbP2EiwFNxqmYO06v_G1InTW0-"
-
-headers = {
-    "User-Agent":"Mozilla/5.0"
-}
-
-SEEN_FILE="seen.json"
+SEEN_FILE = "seen.json"
 
 try:
-    with open(SEEN_FILE,"r") as f:
-        seen=set(json.load(f))
+    with open(SEEN_FILE, "r") as f:
+        seen = set(json.load(f))
 except:
-    seen=set()
+    seen = set()
+
 
 def send(msg):
     requests.post(
         f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
         data={
-            "chat_id":CHAT_ID,
-            "text":msg
+            "chat_id": CHAT_ID,
+            "text": msg
         }
     )
 
-print("Opening Mini GT listings...")
 
-r=requests.get(URL,headers=headers)
+current = set()
 
-print("Status:",r.status_code)
+with sync_playwright() as p:
 
-soup=BeautifulSoup(
-    r.text,
-    "html.parser"
-)
+    browser = p.chromium.launch(headless=True)
 
-current=set()
+    page = browser.new_page()
 
-links=soup.find_all("a",href=True)
+    print("Opening page...")
+    page.goto(URL, wait_until="networkidle")
 
-print("Links:",len(links))
+    page.wait_for_timeout(5000)
 
-for a in links:
+    links = page.locator("a").all()
 
-    text=a.get_text(
-        " ",
-        strip=True
-    )
+    print("Total:", len(links))
 
-    href=a["href"]
+    for a in links:
 
-    # real products usually have long names
-    if len(text)<20:
-        continue
+        try:
+            text = a.inner_text().strip()
+            href = a.get_attribute("href")
 
-    if href.startswith("/"):
-        link=BASE+href
-    else:
-        link=href
+            if not text:
+                continue
 
-    # avoid category pages
-    if "/details/" not in link:
-        continue
+            # real Mini GT products usually have model names
+            if "MINI GT" not in text.upper():
+                continue
 
-    if "mini+gt" not in link.lower():
-        continue
+            if len(text) < 15:
+                continue
 
-    if link in current:
-        continue
+            if not href:
+                continue
 
-    current.add(link)
+            if href.startswith("/"):
+                href = "https://www.karzanddolls.com" + href
 
-    print("PRODUCT:",text)
-    print("LINK:",link)
+            current.add(href)
 
-    if link not in seen:
+            print("PRODUCT:", text)
+            print("LINK:", href)
 
-        msg=f"""🔥 MINI GT RESTOCK
+            if href not in seen:
+
+                msg = f"""🔥 MINI GT RESTOCK
 
 🚗 {text}
 
 🛒 Buy:
-{link}
+{href}
 """
 
-        send(msg)
+                send(msg)
 
-with open(
-    SEEN_FILE,
-    "w"
-) as f:
+        except:
+            pass
 
-    json.dump(
-        list(current),
-        f
-    )
+    browser.close()
 
-print("Saved:",len(current))
+
+with open(SEEN_FILE, "w") as f:
+    json.dump(list(current), f)
+
+print("Saved:", len(current))
