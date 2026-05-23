@@ -1,127 +1,60 @@
 import requests
 from bs4 import BeautifulSoup
 import os
-import json
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
 
 URL = "https://www.karzanddolls.com/details/tsm%2Bmodel%2Bcars/mini-gt/MTY1"
 
-SEEN_FILE = "seen.json"
-
-try:
-    with open(SEEN_FILE,"r") as f:
-        seen = set(json.load(f))
-except:
-    seen = set()
-
 headers = {
     "User-Agent":"Mozilla/5.0"
 }
 
-def send_product(name, price, link, image):
-
-    caption = f"""
-🚗 *Mini GT Restock Alert*
-
-*{name}*
-
-💰 Price: {price}
-
-🛒 Buy:
-{link}
-"""
-
-    requests.post(
-        f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto",
+def send(text):
+    r = requests.post(
+        f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
         data={
             "chat_id": CHAT_ID,
-            "photo": image,
-            "caption": caption,
-            "parse_mode": "Markdown"
+            "text": text
         }
     )
 
-print("Checking Mini GT page...")
+    print("Telegram:", r.status_code)
+    print(r.text)
+
+print("Checking...")
 
 r = requests.get(URL, headers=headers)
 
-print("Status:", r.status_code)
+print("Website:", r.status_code)
 
 soup = BeautifulSoup(r.text,"html.parser")
 
-products = soup.find_all("a")
+links = soup.find_all("a")
 
-count=0
+count = 0
 
-for p in products:
+for a in links:
 
-    text = p.get_text(" ",strip=True)
+    text = a.get_text(" ",strip=True)
+    href = a.get("href")
 
-    href = p.get("href")
+    if "MINI GT" in text.upper():
 
-    if "MINI GT" not in text.upper():
-        continue
+        print("FOUND:", text)
 
-    if text in seen:
-        continue
+        msg = f"""
+🚗 {text}
 
-    seen.add(text)
+Buy:
+https://www.karzanddolls.com{href}
+"""
 
-    link = (
-        "https://www.karzanddolls.com"+href
-        if href and href.startswith("/")
-        else URL
-    )
+        send(msg)
 
-    # visit product page
-    try:
+        count += 1
 
-        page=requests.get(
-            link,
-            headers=headers
-        )
+        break
 
-        psoup=BeautifulSoup(
-            page.text,
-            "html.parser"
-        )
-
-        img=""
-
-        image_tag=psoup.find("img")
-
-        if image_tag:
-            img=image_tag.get("src","")
-
-        price="Not found"
-
-        for t in psoup.stripped_strings:
-            if "₹" in t:
-                price=t
-                break
-
-        send_product(
-            text,
-            price,
-            link,
-            img
-        )
-
-        count +=1
-
-    except Exception as e:
-        print(e)
-
-with open(
-    SEEN_FILE,
-    "w"
-) as f:
-
-    json.dump(
-        list(seen),
-        f
-    )
-
-print("Sent:",count)
+print("Sent:", count)
