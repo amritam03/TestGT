@@ -8,7 +8,7 @@ CHAT_ID = os.getenv("CHAT_ID")
 URL = "https://www.karzanddolls.com/details/tsm%2Bmodel%2Bcars/mini-gt/MTY1"
 
 headers = {
-    "User-Agent": "Mozilla/5.0"
+    "User-Agent":"Mozilla/5.0"
 }
 
 def send(msg):
@@ -21,9 +21,8 @@ def send(msg):
     )
 
     print("Telegram:", r.status_code)
-    print(r.text)
 
-print("Checking Mini GT page...")
+print("Loading Mini GT page...")
 
 r = requests.get(URL, headers=headers)
 
@@ -31,30 +30,40 @@ print("Website:", r.status_code)
 
 soup = BeautifulSoup(r.text, "html.parser")
 
-for a in soup.find_all("a"):
+sent = 0
 
+# Find only links that look like product detail pages
+for a in soup.find_all("a", href=True):
+
+    href = a["href"]
     text = a.get_text(" ", strip=True)
-    href = a.get("href")
 
-    if "MINI GT" in text.upper():
+    # Skip empty titles
+    if len(text) < 10:
+        continue
 
-        link = ""
+    # Product pages usually contain /details/
+    if "/details/" not in href:
+        continue
 
-        if href:
-            if href.startswith("/"):
-                link = "https://www.karzanddolls.com" + href
-            else:
-                link = href
+    if href.startswith("/"):
+        link = "https://www.karzanddolls.com" + href
+    else:
+        link = href
 
-        msg = f"""
+    msg = f"""
 🚗 {text}
 
 🛒 Buy:
 {link}
 """
 
-        print(msg)
+    print(msg)
 
-        send(msg)
+    send(msg)
 
-        break
+    sent += 1
+
+    break
+
+print("Sent:", sent)
