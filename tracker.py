@@ -28,13 +28,11 @@ def send(msg):
             "text": msg
         }
     )
-
     print("Telegram:", r.status_code)
 
-print("Checking Mini GT page...")
+print("Loading Mini GT page...")
 
 r = requests.get(URL, headers=headers)
-
 print("Website:", r.status_code)
 
 soup = BeautifulSoup(r.text, "html.parser")
@@ -43,12 +41,22 @@ current = set()
 
 for a in soup.find_all("a", href=True):
 
-    text = a.get_text(" ", strip=True)
     href = a["href"]
+    text = a.get_text(" ", strip=True)
 
+    # skip empty names
+    if len(text) < 10:
+        continue
+
+    # must be Mini GT
     if "MINI GT" not in text.upper():
         continue
 
+    # ignore category page itself
+    if href.endswith("/MTY1"):
+        continue
+
+    # only actual product pages
     if "/details/" not in href:
         continue
 
@@ -57,13 +65,18 @@ for a in soup.find_all("a", href=True):
     else:
         link = href
 
-    product_id = link
-    current.add(product_id)
+    # prevent duplicates
+    if link in current:
+        continue
 
-    if product_id not in seen:
+    current.add(link)
 
-        msg = f"""
-🔥 NEW / RESTOCKED MINI GT
+    print("PRODUCT:", text)
+    print("LINK:", link)
+
+    if link not in seen:
+
+        msg = f"""🔥 MINI GT RESTOCK
 
 🚗 {text}
 
@@ -73,9 +86,7 @@ for a in soup.find_all("a", href=True):
 
         send(msg)
 
-seen = current
-
 with open(SEEN_FILE, "w") as f:
-    json.dump(list(seen), f)
+    json.dump(list(current), f)
 
-print("Saved", len(seen), "products")
+print("Saved:", len(current))
