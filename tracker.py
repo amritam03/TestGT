@@ -5,7 +5,7 @@ import os
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
 
-URL = "https://www.karzanddolls.com/details/mini+gt+/mini-gt/MTY1"
+URL = "https://www.karzanddolls.com/search?q=mini+gt"
 
 def send(msg):
     requests.post(
