@@ -34,3 +34,6 @@ jobs:
           git add seen.json
           git commit -m "update seen products" || exit 0
           git push
+
+run: pip install -r requirements.txt
+run: playwright install chromium
