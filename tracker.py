@@ -2,15 +2,20 @@ import requests
 from bs4 import BeautifulSoup
 import os
 import json
-import re
+from urllib.parse import urljoin
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
 
+BASE = "https://www.karzanddolls.com"
 URL = "https://www.karzanddolls.com/details/tsm%2Bmodel%2Bcars/mini-gt/MTY1"
 
 headers = {
-    "User-Agent": "Mozilla/5.0"
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/137.0 Safari/537.36"
+    )
 }
 
 SEEN_FILE = "seen.json"
@@ -30,14 +35,12 @@ def send(msg):
             "text": msg
         }
     )
-
     print("Telegram:", r.status_code)
 
 
-print("Loading Mini GT page...")
+print("Opening Mini GT page...")
 
-r = requests.get(URL, headers=headers)
-
+r = requests.get(URL, headers=headers, timeout=30)
 print("Status:", r.status_code)
 
 soup = BeautifulSoup(r.text, "html.parser")
@@ -46,54 +49,65 @@ current = set()
 
 for a in soup.find_all("a", href=True):
 
-    href = a["href"]
     text = a.get_text(" ", strip=True)
+    href = a["href"]
 
-    # skip empty text
     if len(text) < 8:
         continue
 
-    # must contain Mini GT
-    if "MINI GT" not in text.upper():
+    link = urljoin(BASE, href)
+
+    # Skip category page itself
+    if link == URL:
         continue
 
-    # build full link
-    if href.startswith("/"):
-        link = "https://www.karzanddolls.com" + href
-    else:
-        link = href
-
-    # reject category page itself
-    if link.endswith("/MTY1"):
-        continue
-
-    # keep only detail pages
-    if "/details/" not in link:
-        continue
-
-    # reject generic category links
-    if re.search(r"/mini-gt/MTY1$", link):
-        continue
-
+    # Skip already checked duplicates
     if link in current:
         continue
 
-    current.add(link)
+    try:
+        # Open candidate page
+        p = requests.get(link, headers=headers, timeout=15)
 
-    print("PRODUCT:", text)
-    print("LINK:", link)
+        if p.status_code != 200:
+            continue
 
-    if link not in seen:
+        psoup = BeautifulSoup(p.text, "html.parser")
 
-        msg = f"""🔥 MINI GT RESTOCK
+        page_text = psoup.get_text(" ", strip=True).upper()
 
-🚗 {text}
+        # Verify this is a real Mini GT product page
+        if "MINI GT" not in page_text:
+            continue
+
+        # Try to find title
+        title = ""
+
+        if psoup.title:
+            title = psoup.title.text.strip()
+
+        if len(title) < 5:
+            title = text
+
+        current.add(link)
+
+        print("PRODUCT:", title)
+        print("LINK:", link)
+
+        if link not in seen:
+
+            msg = f"""🔥 MINI GT RESTOCK
+
+🚗 {title}
 
 🛒 Buy:
 {link}
 """
 
-        send(msg)
+            send(msg)
+
+    except Exception as e:
+        print("ERROR:", e)
 
 with open(SEEN_FILE, "w") as f:
     json.dump(list(current), f)
