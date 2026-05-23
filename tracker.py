@@ -21,72 +21,98 @@ except:
     seen = set()
 
 def send(msg):
-    r = requests.post(
+    requests.post(
         f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
         data={
             "chat_id": CHAT_ID,
             "text": msg
         }
     )
-    print("Telegram:", r.status_code)
 
 print("Loading Mini GT page...")
 
 r = requests.get(URL, headers=headers)
-print("Website:", r.status_code)
+
+print("Status:", r.status_code)
 
 soup = BeautifulSoup(r.text, "html.parser")
 
 current = set()
 
-for a in soup.find_all("a", href=True):
+cards = soup.select("div.productbox")
 
-    href = a["href"]
-    text = a.get_text(" ", strip=True)
+print("Products found:", len(cards))
 
-    # skip empty names
-    if len(text) < 10:
-        continue
+for card in cards:
 
-    # must be Mini GT
-    if "MINI GT" not in text.upper():
-        continue
+    try:
 
-    # ignore category page itself
-    if href.endswith("/MTY1"):
-        continue
+        title_tag = card.select_one("a")
 
-    # only actual product pages
-    if "/details/" not in href:
-        continue
+        if not title_tag:
+            continue
 
-    if href.startswith("/"):
-        link = "https://www.karzanddolls.com" + href
-    else:
-        link = href
+        title = title_tag.get_text(
+            " ",
+            strip=True
+        )
 
-    # prevent duplicates
-    if link in current:
-        continue
+        href = title_tag.get(
+            "href"
+        )
 
-    current.add(link)
+        if not href:
+            continue
 
-    print("PRODUCT:", text)
-    print("LINK:", link)
+        if href.startswith("/"):
+            link = (
+                "https://www.karzanddolls.com"
+                + href
+            )
+        else:
+            link = href
 
-    if link not in seen:
+        price = "Unknown"
 
-        msg = f"""🔥 MINI GT RESTOCK
+        price_tag = card.find(
+            text=lambda t:
+            t and "₹" in t
+        )
 
-🚗 {text}
+        if price_tag:
+            price = price_tag.strip()
+
+        print("TITLE:", title)
+        print("LINK:", link)
+
+        current.add(link)
+
+        if link not in seen:
+
+            msg=f"""
+🔥 MINI GT RESTOCK
+
+🚗 {title}
+
+💰 {price}
 
 🛒 Buy:
 {link}
 """
 
-        send(msg)
+            send(msg)
 
-with open(SEEN_FILE, "w") as f:
-    json.dump(list(current), f)
+    except Exception as e:
+        print(e)
 
-print("Saved:", len(current))
+with open(
+    SEEN_FILE,
+    "w"
+) as f:
+
+    json.dump(
+        list(current),
+        f
+    )
+
+print("Saved:",len(current))
