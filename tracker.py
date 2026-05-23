@@ -1,7 +1,7 @@
 import requests
 from bs4 import BeautifulSoup
 
-URL = "https://www.karzanddolls.com/details/tsm%2Bmodel%2Bcars/mini-gt/MTY1"
+URL = "https://www.karzanddolls.com/details/mini+gt+/mini-gt/MTY1"
 
 headers = {
     "User-Agent": "Mozilla/5.0"
@@ -13,14 +13,27 @@ print("Status:", r.status_code)
 
 soup = BeautifulSoup(r.text, "html.parser")
 
-links = soup.find_all("a", href=True)
+for a in soup.find_all("a", href=True):
 
-print("Total links:", len(links))
-
-for i, a in enumerate(links[:50]):   # first 50 only
     text = a.get_text(" ", strip=True)
     href = a["href"]
 
-    print("\n-----")
-    print("TEXT:", text[:100])
-    print("LINK:", href)
+    full = href
+    if href.startswith("/"):
+        full = "https://www.karzanddolls.com" + href
+
+    # Skip obvious menu links
+    if "/shop/" in full:
+        continue
+
+    # Show only detail pages
+    if "/details/" not in full:
+        continue
+
+    # Ignore Mini GT category pages
+    if "/mini-gt/MTY1" in full:
+        continue
+
+    print("TEXT:", text[:150])
+    print("LINK:", full)
+    print("------")
