@@ -5,7 +5,7 @@ import os
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
 
-URL = "https://www.karzanddolls.com/search?q=mini+gt"
+URL = "https://www.karzanddolls.com/details/tsm%2Bmodel%2Bcars/mini-gt/MTY1"
 
 def send(msg):
     requests.post(
@@ -20,22 +20,27 @@ headers = {
     "User-Agent": "Mozilla/5.0"
 }
 
-print("Checking Mini GT listings...")
+print("Checking Mini GT page...")
 
 r = requests.get(URL, headers=headers)
 
-print("Website status:", r.status_code)
+print("Status:", r.status_code)
 
 soup = BeautifulSoup(r.text, "html.parser")
 
-found = []
+items = []
 
 for text in soup.stripped_strings:
-    if "MINI GT" in text.upper():
-        if text not in found:
-            found.append(text)
+    t = text.strip()
 
-for item in found[:5]:
+    if "MINI GT" in t.upper() and len(t) > 15:
+        if t not in items:
+            items.append(t)
+
+print("Found:", len(items))
+
+for item in items[:5]:
+    print(item)
     send(f"🚗 Mini GT found:\n\n{item}")
 
 print("Done")
