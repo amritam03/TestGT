@@ -1,6 +1,7 @@
 import requests
 from bs4 import BeautifulSoup
 import os
+import json
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
@@ -10,6 +11,14 @@ URL = "https://www.karzanddolls.com/details/tsm%2Bmodel%2Bcars/mini-gt/MTY1"
 headers = {
     "User-Agent": "Mozilla/5.0"
 }
+
+SEEN_FILE = "seen.json"
+
+try:
+    with open(SEEN_FILE, "r") as f:
+        seen = set(json.load(f))
+except:
+    seen = set()
 
 def send(msg):
     r = requests.post(
@@ -21,9 +30,8 @@ def send(msg):
     )
 
     print("Telegram:", r.status_code)
-    print(r.text)
 
-print("Loading Mini GT page...")
+print("Checking Mini GT page...")
 
 r = requests.get(URL, headers=headers)
 
@@ -31,41 +39,43 @@ print("Website:", r.status_code)
 
 soup = BeautifulSoup(r.text, "html.parser")
 
-sent = 0
+current = set()
 
 for a in soup.find_all("a", href=True):
 
     text = a.get_text(" ", strip=True)
     href = a["href"]
 
-    # Must contain MINI GT
     if "MINI GT" not in text.upper():
         continue
 
-    # Must be an individual product page
     if "/details/" not in href:
         continue
 
-    # Build full link
     if href.startswith("/"):
         link = "https://www.karzanddolls.com" + href
     else:
         link = href
 
-    msg = f"""
+    product_id = link
+    current.add(product_id)
+
+    if product_id not in seen:
+
+        msg = f"""
+🔥 NEW / RESTOCKED MINI GT
+
 🚗 {text}
 
 🛒 Buy:
 {link}
 """
 
-    print(msg)
+        send(msg)
 
-    send(msg)
+seen = current
 
-    sent += 1
+with open(SEEN_FILE, "w") as f:
+    json.dump(list(seen), f)
 
-    # Send only first result while testing
-    break
-
-print("Sent:", sent)
+print("Saved", len(seen), "products")
