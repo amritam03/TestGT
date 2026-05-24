@@ -5,13 +5,9 @@ on:
     - cron: '*/5 * * * *'
   workflow_dispatch:
 
-permissions:
-  actions: read
-  contents: read
-
 jobs:
   check-stock:
-    runs-on: ubuntu-latest
+    runs-runs-on: ubuntu-latest
 
     steps:
     - name: Checkout Code Repository
@@ -27,14 +23,14 @@ jobs:
         python -m pip install --upgrade pip
         pip install requests beautifulsoup4
 
-    # FIX: We point directly to the exact filename 'run_tracker.yml' instead of trying to match a text name string
-    - name: Download Previous Inventory History
-      uses: dawidd6/action-download-artifact@v7
+    # Native Cache: Restores the inventory file safely from your last run
+    - name: Restore Mini GT Inventory Cache
+      uses: actions/cache/restore@v4
       with:
-        name: inventory-history
-        workflow: run_tracker.yml  # Points directly to this file
-        workflow_conclusion: success
-        if_no_artifact_found: warn
+        path: inventory.txt
+        key: mini-gt-inventory-${{ github.run_id }}
+        restore-keys: |
+          mini-gt-inventory-
 
     - name: Run Restock Script
       env:
@@ -42,9 +38,9 @@ jobs:
         TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
       run: python tracker.py
 
-    - name: Upload Updated Inventory History
-      uses: actions/upload-artifact@v4
+    # Native Save: Saves the updated file into permanent storage for your next loop
+    - name: Save Updated Mini GT Inventory Cache
+      uses: actions/cache/save@v4
       with:
-        name: inventory-history
         path: inventory.txt
-        retention-days: 2
+        key: mini-gt-inventory-${{ github.run_id }}
