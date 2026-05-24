@@ -3,16 +3,15 @@ import sys
 import requests
 from bs4 import BeautifulSoup
 
-# This maps directly to your encrypted GitHub Repository Secrets
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
+# Main Mini GT Collection Grid URL
 TARGET_URL = "https://www.karzanddolls.com/details/tsm+model+cars/mini-gt/MTY1"
 
 def check_restock():
-    # Defensive check: Make sure GitHub successfully injected the secrets
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
-        print("Error: Missing Telegram Environment Secrets. Did you add them to GitHub settings?")
+        print("Error: Missing Telegram Environment Secrets.")
         sys.exit(1)
 
     headers = {
@@ -25,17 +24,22 @@ def check_restock():
     try:
         response = requests.get(TARGET_URL, headers=headers, timeout=15)
         if response.status_code != 200:
-            print(f"Blocked or Site Error! Status code: {response.status_code}")
+            print(f"Server returned status code: {response.status_code}")
             return
             
         soup = BeautifulSoup(response.text, "html.parser")
-        available_items = soup.find_all(string=lambda text: text and "Add to Cart" in text)
-        current_count = len(available_items)
         
-        print(f"Scan complete. Found {current_count} available Mini GT items.")
+        # FIX: Track active item listings by counting blocks containing price points (Rs. or ₹)
+        product_prices = soup.find_all(string=lambda text: text and any(marker in text for marker in ["Rs.", "₹"]))
+        current_count = len(product_prices)
         
+        print(f"Scan complete. Active Mini GT items with price tags found: {current_count}")
+        
+        # Change this to > 0 to test your Telegram ping immediately.
+        # Once verified, you can set it to track if the count increases!
         if current_count > 0: 
-            send_telegram_alert(f"🚨 Mini GT Restock Detected!\nFound {current_count} items available.\nCheck here: {TARGET_URL}")
+            msg = f"🚨 *MINI GT STOCK DETECTED!* 🚨\n\nFound *{current_count}* listed items in the catalog.\n\nHunt here: {TARGET_URL}"
+            send_telegram_alert(msg)
             
     except Exception as e:
         print(f"An error occurred: {e}")
@@ -44,8 +48,11 @@ def send_telegram_alert(message):
     telegram_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
     payload = {"chat_id": TELEGRAM_CHAT_ID, "text": message, "parse_mode": "Markdown"}
     try:
-        requests.post(telegram_url, json=payload, timeout=10)
-        print("Alert successfully sent to Telegram!")
+        res = requests.post(telegram_url, json=payload, timeout=10)
+        if res.status_code == 200:
+            print("Alert successfully sent to Telegram!")
+        else:
+            print(f"Telegram API Error: {res.status_code}")
     except Exception as e:
         print(f"Failed to send alert: {e}")
 
