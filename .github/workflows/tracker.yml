@@ -1,36 +1,34 @@
-name: Mini GT Tracker
+name: Mini GT Restock Tracker
 
 on:
-  workflow_dispatch:
   schedule:
-    - cron: "*/5 * * * *"
+    # Runs every 1 minute (GitHub may throttle slightly)
+    - cron: "*/1 * * * *"
+
+  workflow_dispatch:  # manual run button
 
 jobs:
-  run:
+  track:
     runs-on: ubuntu-latest
 
-    permissions:
-      contents: write
-
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repo
+        uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      - run: pip install -r requirements.txt
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install playwright requests
+          playwright install chromium
 
       - name: Run tracker
         env:
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           CHAT_ID: ${{ secrets.CHAT_ID }}
-        run: python tracker.py
-
-      - name: Save seen list
         run: |
-          git config user.name github-actions
-          git config user.email github-actions@github.com
-          git add seen.json
-          git commit -m "update seen products" || exit 0
-          git push
+          python tracker.py
