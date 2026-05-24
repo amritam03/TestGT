@@ -9,11 +9,19 @@ TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 TARGET_URL = "https://www.karzanddolls.com/details/tsm+model+cars/mini-gt/MTY1"
+HISTORY_FILE = "inventory.txt"
 
-# Memory bank to store products we have already alerted you about during this run
-sent_notifications = set()
+# Load previously known items from the saved history file
+known_products = set()
+if os.path.exists(HISTORY_FILE):
+    with open(HISTORY_FILE, "r") as f:
+        known_products = set(line.strip() for line in f if line.strip())
+    print(f"Loaded {len(known_products)} baseline products from persistent storage.")
+else:
+    print("No previous inventory file found. This might be the first setup run.")
 
 def fetch_and_check():
+    global known_products
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
@@ -24,13 +32,14 @@ def fetch_and_check():
     try:
         response = requests.get(TARGET_URL, headers=headers, timeout=15)
         if response.status_code != 200:
-            print(f"[{time.strftime('%H:%M:%S')}] Server returned error status: {response.status_code}")
+            print(f"[{time.strftime('%H:%M:%S')}] Server error: {response.status_code}")
             return
             
         soup = BeautifulSoup(response.text, "html.parser")
         product_cards = soup.find_all("div", class_=lambda c: c and ("col-" in c or "product" in c.lower()))
         
-        new_items_found = 0
+        current_scan_links = set()
+        new_items_alerted = 0
         
         for card in product_cards:
             price_elem = card.find(string=lambda text: text and any(marker in text for marker in ["Rs.", "₹"]))
@@ -56,10 +65,14 @@ def fetch_and_check():
             if not product_url or product_url == "https://www.karzanddolls.com" or "javascript" in product_url.lower():
                 continue
 
-            # FIX: Use the unique product URL as a fingerprint to prevent duplicates
-            if product_url in sent_notifications:
-                continue # We already sent this one, skip it!
+            # Keep a record of everything currently live on the site
+            current_scan_links.add(product_url)
 
+            # CRITICAL FILTER: If we already know this product, skip it entirely!
+            if product_url in known_products:
+                continue
+
+            # If we reach here, it's a genuine new listing or a fresh restock!
             title = None
             for a in anchors:
                 text = a.get_text(strip=True)
@@ -73,7 +86,7 @@ def fetch_and_check():
                 title = "Mini GT Scaled Model"
 
             caption = (
-                f"🚨 *NEW MINI GT STOCK DETECTED!* 🚨\n\n"
+                f"🚨 *NEW MINI GT ARRIVAL / RESTOCK!* 🚨\n\n"
                 f"🚘 *Model:* {title}\n"
                 f"💰 *Price:* {price}\n\n"
                 f"🔗 *Buy Now:* {product_url}"
@@ -81,14 +94,19 @@ def fetch_and_check():
             
             send_telegram_photo_alert(img_url, caption)
             
-            # Add this item to memory so we don't alert you again on the next 1-minute loop
-            sent_notifications.add(product_url)
-            new_items_found += 1
+            # Immediately add to our local set so we don't alert again in the next 1-minute loop iteration
+            known_products.add(product_url)
+            new_items_alerted += 1
             
-        print(f"[{time.strftime('%H:%M:%S')}] Check done. Sent {new_items_found} new alerts.")
-            
+        print(f"[{time.strftime('%H:%M:%S')}] Check complete. Dispatched {new_items_alerted} new restock alerts.")
+        
+        # Save our updated list back to the text file
+        with open(HISTORY_FILE, "w") as f:
+            for link in current_scan_links:
+                f.write(f"{link}\n")
+                
     except Exception as e:
-        print(f"Error encountered during active scan loop: {e}")
+        print(f"Error during execution scan: {e}")
 
 def send_telegram_photo_alert(image_url, caption_text):
     telegram_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendPhoto"
@@ -102,21 +120,16 @@ def send_telegram_photo_alert(image_url, caption_text):
     try:
         requests.post(telegram_url, json=payload, timeout=10)
     except Exception as e:
-        print(f"Failed alert delivery: {e}")
+        print(f"Failed to drop Telegram ping: {e}")
 
 if __name__ == "__main__":
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
-        print("Error: Missing Telegram Credentials.")
+        print("Missing variables. Halting pipeline.")
         sys.exit(1)
 
-    print("Starting smart 1-minute loop sequence...")
-    
-    # Run the loop sequence
+    # 5 iterations spaced 1 minute apart = 5 total minutes
     for i in range(5):
         print(f"Running check cycle {i+1} of 5...")
         fetch_and_check()
-        
         if i < 4:
             time.sleep(60)
-            
-    print("Loop sequence completed successfully.")
