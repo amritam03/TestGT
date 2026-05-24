@@ -2,11 +2,12 @@ import os
 import sys
 import requests
 from bs4 import BeautifulSoup
+from urllib.parse import urljoin
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-# Main Mini GT Collection Grid URL
+# Main Mini GT Catalog Page URL
 TARGET_URL = "https://www.karzanddolls.com/details/tsm+model+cars/mini-gt/MTY1"
 
 def check_restock():
@@ -22,39 +23,98 @@ def check_restock():
     }
 
     try:
-        response = requests.get(TARGET_URL, headers=headers, timeout=15)
+        response = requests.get(TARGET_URL, headers=headers, timeout=20)
         if response.status_code != 200:
             print(f"Server returned status code: {response.status_code}")
             return
             
         soup = BeautifulSoup(response.text, "html.parser")
         
-        # FIX: Track active item listings by counting blocks containing price points (Rs. or ₹)
-        product_prices = soup.find_all(string=lambda text: text and any(marker in text for marker in ["Rs.", "₹"]))
-        current_count = len(product_prices)
+        # KarzAndDolls structures individual item grids inside card elements or item wrappers.
+        # We will parse out all structural product nodes to isolate individual details cleanly.
+        product_cards = soup.select(".product-box") or soup.select("[class*='col-']") or soup.find_all("div", class_=lambda c: c and "product" in c.lower())
         
-        print(f"Scan complete. Active Mini GT items with price tags found: {current_count}")
+        print(f"Scan running. Found {len(product_cards)} grid container elements.")
         
-        # Change this to > 0 to test your Telegram ping immediately.
-        # Once verified, you can set it to track if the count increases!
-        if current_count > 0: 
-            msg = f"🚨 *MINI GT STOCK DETECTED!* 🚨\n\nFound *{current_count}* listed items in the catalog.\n\nHunt here: {TARGET_URL}"
-            send_telegram_alert(msg)
+        processed_count = 0
+
+        for card in product_cards:
+            # Check for pricing to guarantee it's a valid, active store option
+            price_elem = card.find(string=lambda text: text and any(marker in text for marker in ["Rs.", "₹"]))
+            if not price_elem:
+                continue
+                
+            price = price_elem.strip()
+            
+            # Extract the specific product listing page URL anchor
+            link_elem = card.find("a", href=True)
+            if not link_elem:
+                continue
+            product_url = urljoin("https://www.karzanddolls.com", link_elem["href"])
+            
+            # Extract Image URL string element
+            img_elem = card.find("img")
+            img_url = None
+            if img_elem:
+                # Fallback structure handles common lazy-loading image attributes on e-commerce platforms
+                img_src = img_elem.get("data-src") or img_elem.get("src")
+                if img_src:
+                    img_url = urljoin("https://www.karzanddolls.com", img_src)
+            
+            # Isolate the exact item title variant text
+            # Cleans common boilerplate out to maximize title accuracy 
+            title = "Unknown Mini GT Model"
+            title_candidates = card.find_all(["h4", "h5", "p", "a"])
+            for candidate in title_candidates:
+                text = candidate.get_text(strip=True)
+                if "MINI GT" in text.upper() and len(text) > 10 and "SELECT A SIZE" not in text.upper():
+                    title = text
+                    break
+            
+            # Match fallback options if specific 'MINI GT' anchor wasn't structural
+            if title == "Unknown Mini GT Model" and link_elem.get("title"):
+                title = link_elem["title"].strip()
+
+            # Construct clean layout caption metadata block for Telegram notifications
+            caption = (
+                f"🚨 *NEW MINI GT STOCK DETECTED!* 🚨\n\n"
+                f"🚘 *Model:* {title}\n"
+                f"💰 *Price:* {price}\n\n"
+                f"🔗 *Buy Now:* {product_url}"
+            )
+            
+            send_telegram_photo_alert(img_url, caption)
+            processed_count += 1
+            
+        print(f"Successfully dispatched alert listings for {processed_count} individual Mini GT scale models.")
             
     except Exception as e:
-        print(f"An error occurred: {e}")
+        print(f"An execution error occurred inside the parser parser engine: {e}")
 
-def send_telegram_alert(message):
-    telegram_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    payload = {"chat_id": TELEGRAM_CHAT_ID, "text": message, "parse_mode": "Markdown"}
+def send_telegram_photo_alert(image_url, caption_text):
+    # Switches processing to the native 'sendPhoto' API gateway endpoint
+    telegram_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendPhoto"
+    
+    payload = {
+        "chat_id": TELEGRAM_CHAT_ID,
+        "caption": caption_text,
+        "parse_mode": "Markdown"
+    }
+    
+    # If a product image URL was found, pass it dynamically. Fallback drops down to raw text send if missing.
+    if image_url:
+        payload["photo"] = image_url
+    else:
+        telegram_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+        payload["text"] = caption_text
+        del payload["caption"]
+
     try:
-        res = requests.post(telegram_url, json=payload, timeout=10)
-        if res.status_code == 200:
-            print("Alert successfully sent to Telegram!")
-        else:
-            print(f"Telegram API Error: {res.status_code}")
+        res = requests.post(telegram_url, json=payload, timeout=12)
+        if res.status_code != 200:
+            print(f"Telegram API Warning: Response code {res.status_code}")
     except Exception as e:
-        print(f"Failed to send alert: {e}")
+        print(f"Failed photo upload routing to target channel device: {e}")
 
 if __name__ == "__main__":
     check_restock()
