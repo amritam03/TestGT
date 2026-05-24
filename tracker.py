@@ -11,17 +11,20 @@ TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 TARGET_URL = "https://www.karzanddolls.com/details/tsm+model+cars/mini-gt/MTY1"
 HISTORY_FILE = "inventory.txt"
 
-# Load previously known items from the saved history file
+# Load previously known items
 known_products = set()
+is_first_run_ever = False
+
 if os.path.exists(HISTORY_FILE):
     with open(HISTORY_FILE, "r") as f:
         known_products = set(line.strip() for line in f if line.strip())
-    print(f"Loaded {len(known_products)} baseline products from persistent storage.")
+    print(f"Loaded {len(known_products)} tracking baselines from persistent historical storage.")
 else:
-    print("No previous inventory file found. This might be the first setup run.")
+    print("No previous inventory history found. Setting up an initial tracking baseline file now.")
+    is_first_run_ever = True
 
 def fetch_and_check():
-    global known_products
+    global known_products, is_first_run_ever
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
@@ -65,14 +68,18 @@ def fetch_and_check():
             if not product_url or product_url == "https://www.karzanddolls.com" or "javascript" in product_url.lower():
                 continue
 
-            # Keep a record of everything currently live on the site
             current_scan_links.add(product_url)
 
-            # CRITICAL FILTER: If we already know this product, skip it entirely!
+            # Safeguard: Skip sending alerts if the database is building its very first setup template
+            if is_first_run_ever:
+                known_products.add(product_url)
+                continue
+
+            # Skip already recognized entries
             if product_url in known_products:
                 continue
 
-            # If we reach here, it's a genuine new listing or a fresh restock!
+            # New release processing
             title = None
             for a in anchors:
                 text = a.get_text(strip=True)
@@ -93,20 +100,23 @@ def fetch_and_check():
             )
             
             send_telegram_photo_alert(img_url, caption)
-            
-            # Immediately add to our local set so we don't alert again in the next 1-minute loop iteration
             known_products.add(product_url)
             new_items_alerted += 1
             
-        print(f"[{time.strftime('%H:%M:%S')}] Check complete. Dispatched {new_items_alerted} new restock alerts.")
+        print(f"[{time.strftime('%H:%M:%S')}] Scan cycle complete. Dispatched {new_items_alerted} new restock notifications.")
         
-        # Save our updated list back to the text file
+        # Save our records immediately back into file memory
         with open(HISTORY_FILE, "w") as f:
             for link in current_scan_links:
                 f.write(f"{link}\n")
                 
+        # Toggle first run flag off after baseline file is created successfully
+        if is_first_run_ever:
+            is_first_run_ever = False
+            print("Initial baseline memory map saved successfully. Active notification tracking is now enabled!")
+                
     except Exception as e:
-        print(f"Error during execution scan: {e}")
+        print(f"Error during loop execution query: {e}")
 
 def send_telegram_photo_alert(image_url, caption_text):
     telegram_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendPhoto"
@@ -124,10 +134,9 @@ def send_telegram_photo_alert(image_url, caption_text):
 
 if __name__ == "__main__":
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
-        print("Missing variables. Halting pipeline.")
+        print("Missing credentials. Halting pipeline.")
         sys.exit(1)
 
-    # 5 iterations spaced 1 minute apart = 5 total minutes
     for i in range(5):
         print(f"Running check cycle {i+1} of 5...")
         fetch_and_check()
