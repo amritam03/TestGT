@@ -10,6 +10,9 @@ TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 TARGET_URL = "https://www.karzanddolls.com/details/tsm+model+cars/mini-gt/MTY1"
 
+# Memory bank to store products we have already alerted you about during this run
+sent_notifications = set()
+
 def fetch_and_check():
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
@@ -27,7 +30,8 @@ def fetch_and_check():
         soup = BeautifulSoup(response.text, "html.parser")
         product_cards = soup.find_all("div", class_=lambda c: c and ("col-" in c or "product" in c.lower()))
         
-        processed_count = 0
+        new_items_found = 0
+        
         for card in product_cards:
             price_elem = card.find(string=lambda text: text and any(marker in text for marker in ["Rs.", "₹"]))
             if not price_elem:
@@ -52,6 +56,10 @@ def fetch_and_check():
             if not product_url or product_url == "https://www.karzanddolls.com" or "javascript" in product_url.lower():
                 continue
 
+            # FIX: Use the unique product URL as a fingerprint to prevent duplicates
+            if product_url in sent_notifications:
+                continue # We already sent this one, skip it!
+
             title = None
             for a in anchors:
                 text = a.get_text(strip=True)
@@ -72,9 +80,12 @@ def fetch_and_check():
             )
             
             send_telegram_photo_alert(img_url, caption)
-            processed_count += 1
             
-        print(f"[{time.strftime('%H:%M:%S')}] Active check done. Found {processed_count} items.")
+            # Add this item to memory so we don't alert you again on the next 1-minute loop
+            sent_notifications.add(product_url)
+            new_items_found += 1
+            
+        print(f"[{time.strftime('%H:%M:%S')}] Check done. Sent {new_items_found} new alerts.")
             
     except Exception as e:
         print(f"Error encountered during active scan loop: {e}")
@@ -98,15 +109,13 @@ if __name__ == "__main__":
         print("Error: Missing Telegram Credentials.")
         sys.exit(1)
 
-    print("Starting 1-minute loop sequence...")
+    print("Starting smart 1-minute loop sequence...")
     
-    # This loop runs exactly 5 times, pausing for 60 seconds between each cycle.
-    # 5 runs * 60 seconds = 5 minutes of total coverage per workflow container run.
+    # Run the loop sequence
     for i in range(5):
         print(f"Running check cycle {i+1} of 5...")
         fetch_and_check()
         
-        # Avoid sleeping on the very last execution cycle so the workflow ends cleanly
         if i < 4:
             time.sleep(60)
             
