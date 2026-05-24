@@ -11,16 +11,16 @@ TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 TARGET_URL = "https://www.karzanddolls.com/details/tsm+model+cars/mini-gt/MTY1"
 HISTORY_FILE = "inventory.txt"
 
-# Load previously known items
 known_products = set()
 is_first_run_ever = False
 
+# Read saved data
 if os.path.exists(HISTORY_FILE):
     with open(HISTORY_FILE, "r") as f:
         known_products = set(line.strip() for line in f if line.strip())
-    print(f"Loaded {len(known_products)} tracking baselines from persistent historical storage.")
+    print(f"Loaded {len(known_products)} baseline products from tracking storage.")
 else:
-    print("No previous inventory history found. Setting up an initial tracking baseline file now.")
+    print("No previous tracking file found. Building a quiet baseline map right now.")
     is_first_run_ever = True
 
 def fetch_and_check():
@@ -35,7 +35,7 @@ def fetch_and_check():
     try:
         response = requests.get(TARGET_URL, headers=headers, timeout=15)
         if response.status_code != 200:
-            print(f"[{time.strftime('%H:%M:%S')}] Server error: {response.status_code}")
+            print(f"[{time.strftime('%H:%M:%S')}] Server returned status: {response.status_code}")
             return
             
         soup = BeautifulSoup(response.text, "html.parser")
@@ -70,16 +70,16 @@ def fetch_and_check():
 
             current_scan_links.add(product_url)
 
-            # Safeguard: Skip sending alerts if the database is building its very first setup template
+            # Quiet Setup: Populates baseline memory list on initial execution
             if is_first_run_ever:
                 known_products.add(product_url)
                 continue
 
-            # Skip already recognized entries
+            # Filtering out known inventory entries
             if product_url in known_products:
                 continue
 
-            # New release processing
+            # Process new listing alerts
             title = None
             for a in anchors:
                 text = a.get_text(strip=True)
@@ -103,20 +103,18 @@ def fetch_and_check():
             known_products.add(product_url)
             new_items_alerted += 1
             
-        print(f"[{time.strftime('%H:%M:%S')}] Scan cycle complete. Dispatched {new_items_alerted} new restock notifications.")
+        print(f"[{time.strftime('%H:%M:%S')}] Check complete. Found {new_items_alerted} restocks.")
         
-        # Save our records immediately back into file memory
         with open(HISTORY_FILE, "w") as f:
             for link in current_scan_links:
                 f.write(f"{link}\n")
                 
-        # Toggle first run flag off after baseline file is created successfully
         if is_first_run_ever:
             is_first_run_ever = False
-            print("Initial baseline memory map saved successfully. Active notification tracking is now enabled!")
+            print("Initial tracking template built. Real-time alert listeners are active!")
                 
     except Exception as e:
-        print(f"Error during loop execution query: {e}")
+        print(f"Error inside processing engine loop: {e}")
 
 def send_telegram_photo_alert(image_url, caption_text):
     telegram_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendPhoto"
@@ -130,11 +128,11 @@ def send_telegram_photo_alert(image_url, caption_text):
     try:
         requests.post(telegram_url, json=payload, timeout=10)
     except Exception as e:
-        print(f"Failed to drop Telegram ping: {e}")
+        print(f"Failed Telegram delivery: {e}")
 
 if __name__ == "__main__":
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
-        print("Missing credentials. Halting pipeline.")
+        print("Missing credentials. Halting tracker.")
         sys.exit(1)
 
     for i in range(5):
