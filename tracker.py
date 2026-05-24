@@ -7,7 +7,7 @@ from urllib.parse import urljoin
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-# Main Mini GT Catalog Page URL
+# Main Mini GT Collection Grid URL
 TARGET_URL = "https://www.karzanddolls.com/details/tsm+model+cars/mini-gt/MTY1"
 
 def check_restock():
@@ -30,52 +30,56 @@ def check_restock():
             
         soup = BeautifulSoup(response.text, "html.parser")
         
-        # KarzAndDolls structures individual item grids inside card elements or item wrappers.
-        # We will parse out all structural product nodes to isolate individual details cleanly.
+        # KarzAndDolls structures grid columns using standard Bootstrap layouts
         product_cards = soup.select(".product-box") or soup.select("[class*='col-']") or soup.find_all("div", class_=lambda c: c and "product" in c.lower())
         
-        print(f"Scan running. Found {len(product_cards)} grid container elements.")
-        
+        print(f"Scan running. Processing grid container elements...")
         processed_count = 0
 
         for card in product_cards:
-            # Check for pricing to guarantee it's a valid, active store option
+            # 1. Price Verification: Ensures it's a real, listed item block
             price_elem = card.find(string=lambda text: text and any(marker in text for marker in ["Rs.", "₹"]))
             if not price_elem:
                 continue
-                
             price = price_elem.strip()
             
-            # Extract the specific product listing page URL anchor
-            link_elem = card.find("a", href=True)
-            if not link_elem:
-                continue
-            product_url = urljoin("https://www.karzanddolls.com", link_elem["href"])
-            
-            # Extract Image URL string element
+            # 2. Extract Image URL 
             img_elem = card.find("img")
             img_url = None
             if img_elem:
-                # Fallback structure handles common lazy-loading image attributes on e-commerce platforms
                 img_src = img_elem.get("data-src") or img_elem.get("src")
                 if img_src:
                     img_url = urljoin("https://www.karzanddolls.com", img_src)
             
-            # Isolate the exact item title variant text
-            # Cleans common boilerplate out to maximize title accuracy 
+            # 3. Clean Title & Extract The Target Link
+            # We filter elements specifically to look for the one containing the item name string.
             title = "Unknown Mini GT Model"
-            title_candidates = card.find_all(["h4", "h5", "p", "a"])
-            for candidate in title_candidates:
-                text = candidate.get_text(strip=True)
-                if "MINI GT" in text.upper() and len(text) > 10 and "SELECT A SIZE" not in text.upper():
-                    title = text
-                    break
+            product_url = TARGET_URL  # Fallback if specific link fails
             
-            # Match fallback options if specific 'MINI GT' anchor wasn't structural
-            if title == "Unknown Mini GT Model" and link_elem.get("title"):
-                title = link_elem["title"].strip()
+            # We look closely at anchor tags that wrap headers or contain longer text titles
+            links_in_card = card.find_all("a", href=True)
+            for a_tag in links_in_card:
+                text = a_tag.get_text(strip=True)
+                
+                # The valid product link tag contains the 'MINI GT' name or specific model markers
+                if "MINI GT" in text.upper() and len(text) > 8 and "SELECT A SIZE" not in text.upper():
+                    title = text
+                    product_url = urljoin("https://www.karzanddolls.com", a_tag["href"])
+                    break
+                    
+            # Fallback title/link check using image context structural layout if text anchor extraction failed
+            if title == "Unknown Mini GT Model" and img_elem:
+                parent_a = img_elem.find_parent("a", href=True)
+                if parent_a:
+                    product_url = urljoin("https://www.karzanddolls.com", parent_a["href"])
+                if img_elem.get("alt"):
+                    title = img_elem["alt"].strip()
 
-            # Construct clean layout caption metadata block for Telegram notifications
+            # Prevent rendering structural anomalies that lack proper links
+            if "javascript" in product_url.lower() or product_url == "https://www.karzanddolls.com":
+                continue
+
+            # Format caption string layout for Telegram channel
             caption = (
                 f"🚨 *NEW MINI GT STOCK DETECTED!* 🚨\n\n"
                 f"🚘 *Model:* {title}\n"
@@ -86,22 +90,19 @@ def check_restock():
             send_telegram_photo_alert(img_url, caption)
             processed_count += 1
             
-        print(f"Successfully dispatched alert listings for {processed_count} individual Mini GT scale models.")
+        print(f"Successfully processed and generated alert listings for {processed_count} individual models.")
             
     except Exception as e:
         print(f"An execution error occurred inside the parser parser engine: {e}")
 
 def send_telegram_photo_alert(image_url, caption_text):
-    # Switches processing to the native 'sendPhoto' API gateway endpoint
     telegram_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendPhoto"
-    
     payload = {
         "chat_id": TELEGRAM_CHAT_ID,
         "caption": caption_text,
         "parse_mode": "Markdown"
     }
     
-    # If a product image URL was found, pass it dynamically. Fallback drops down to raw text send if missing.
     if image_url:
         payload["photo"] = image_url
     else:
