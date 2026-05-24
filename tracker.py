@@ -7,11 +7,11 @@ from urllib.parse import urljoin
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
 
-URL = "https://www.karzanddolls.com/details/mini+gt+/mini-gt/MTY5"
+URL = "https://www.karzanddolls.com/details/mini+gt+/mini-gt/MTY9"
 SEEN_FILE = "seen.json"
 
 
-# ---------------- LOAD STATE ----------------
+# ---------------- LOAD SEEN ----------------
 def load_seen():
     try:
         with open(SEEN_FILE, "r") as f:
@@ -29,35 +29,41 @@ seen = load_seen()
 
 
 # ---------------- TELEGRAM ----------------
-def send(msg):
+def send_telegram(msg):
     if not BOT_TOKEN or not CHAT_ID:
-        print("Missing Telegram env vars")
+        print("Missing BOT_TOKEN or CHAT_ID")
         return
 
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
 
     try:
-        requests.post(url, data={
-            "chat_id": CHAT_ID,
-            "text": msg
-        }, timeout=10)
+        requests.post(
+            url,
+            data={"chat_id": CHAT_ID, "text": msg},
+            timeout=10
+        )
     except Exception as e:
         print("Telegram error:", e)
 
 
-# ---------------- FILTER ----------------
-def is_product(href):
+# ---------------- PRODUCT FILTER (IMPORTANT FIX) ----------------
+def is_real_product(href):
     if not href:
         return False
 
     href = href.lower()
 
-    # must be product page
+    # must be product detail page
     if "/details/" not in href:
         return False
 
-    # remove category pages
-    if href.count("/") <= 4:
+    # remove category pages (too shallow)
+    parts = href.strip("/").split("/")
+    if len(parts) <= 4:
+        return False
+
+    # block pure category pages
+    if href.endswith("mini-gt/"):
         return False
 
     return True
@@ -73,8 +79,9 @@ def scrape():
 
         print("Opening page...")
         page.goto(URL, wait_until="domcontentloaded")
-        page.wait_for_timeout(4000)
+        page.wait_for_timeout(5000)
 
+        # 🔥 ONLY target links that look like products
         links = page.locator("a[href*='/details/']").all()
 
         print("Links found:", len(links))
@@ -86,17 +93,18 @@ def scrape():
 
                 href = urljoin(URL, href)
 
-                if not is_product(href):
+                # 🚨 STRICT FILTER
+                if not is_real_product(href):
                     continue
 
                 current.add(href)
 
-                print("FOUND:", text)
+                print("PRODUCT:", text)
                 print("LINK:", href)
 
-                # NEW PRODUCT ALERT
+                # 🔥 ALERT ONLY NEW ITEMS
                 if href not in seen:
-                    send(f"""🔥 MINI GT RESTOCK ALERT
+                    send_telegram(f"""🔥 MINI GT RESTOCK ALERT
 
 🚗 {text}
 
