@@ -5,7 +5,6 @@ on:
     - cron: '*/5 * * * *'
   workflow_dispatch:
 
-# Grant permissions to read historical artifacts safely
 permissions:
   actions: read
   contents: read
@@ -28,12 +27,12 @@ jobs:
         python -m pip install --upgrade pip
         pip install requests beautifulsoup4
 
-    # FIX: Pull the inventory file from the previous successful run of this exact workflow
+    # FIX: We point directly to the exact filename 'run_tracker.yml' instead of trying to match a text name string
     - name: Download Previous Inventory History
       uses: dawidd6/action-download-artifact@v7
       with:
         name: inventory-history
-        workflow: run_tracker.yml # Connects specifically to this file
+        workflow: run_tracker.yml  # Points directly to this file
         workflow_conclusion: success
         if_no_artifact_found: warn
 
