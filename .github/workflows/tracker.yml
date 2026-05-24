@@ -2,7 +2,6 @@ name: KarzAndDolls Mini GT Tracker
 
 on:
   schedule:
-    # Triggers a new runner container precisely every 5 minutes
     - cron: '*/5 * * * *'
   workflow_dispatch:
 
@@ -24,9 +23,25 @@ jobs:
         python -m pip install --upgrade pip
         pip install requests beautifulsoup4
 
+    # 1. Download the inventory file saved by the last run
+    - name: Download Previous Inventory History
+      uses: actions/download-artifact@v4
+      with:
+        name: inventory-history
+        path: .
+      continue-on-error: true # Safe fallback: if this is the first run, ignore errors and keep going
+
+    # 2. Execute tracking logic with history mapping
     - name: Run Restock Script
-      # This block securely passes your Repository Secrets down into the Python script
       env:
         TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
         TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
       run: python tracker.py
+
+    # 3. Save the new inventory snapshot up to GitHub Storage for the next run
+    - name: Upload Updated Inventory History
+      uses: actions/upload-artifact@v4
+      with:
+        name: inventory-history
+        path: inventory.txt
+        retention-days: 1 # Keeps repository cleanup fast and tidy
