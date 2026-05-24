@@ -2,94 +2,119 @@ from playwright.sync_api import sync_playwright
 import requests
 import os
 import json
+from urllib.parse import urljoin
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
 
-URL = "https://www.karzanddolls.com/details/mini+gt+/mini-gt/MTY1"
-
+URL = "https://www.karzanddolls.com/details/mini+gt+/mini-gt/MTY5"
 SEEN_FILE = "seen.json"
 
-try:
-    with open(SEEN_FILE, "r") as f:
-        seen = set(json.load(f))
-except:
-    seen = set()
+
+# ---------------- LOAD STATE ----------------
+def load_seen():
+    try:
+        with open(SEEN_FILE, "r") as f:
+            return set(json.load(f))
+    except:
+        return set()
 
 
+def save_seen(seen):
+    with open(SEEN_FILE, "w") as f:
+        json.dump(list(seen), f)
+
+
+seen = load_seen()
+
+
+# ---------------- TELEGRAM ----------------
 def send(msg):
-    requests.post(
-        f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
-        data={
+    if not BOT_TOKEN or not CHAT_ID:
+        print("Missing Telegram env vars")
+        return
+
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+
+    try:
+        requests.post(url, data={
             "chat_id": CHAT_ID,
             "text": msg
-        }
-    )
+        }, timeout=10)
+    except Exception as e:
+        print("Telegram error:", e)
 
 
-current = set()
+# ---------------- FILTER ----------------
+def is_product(href):
+    if not href:
+        return False
 
-with sync_playwright() as p:
+    href = href.lower()
 
-    browser = p.chromium.launch(headless=True)
+    # must be product page
+    if "/details/" not in href:
+        return False
 
-    page = browser.new_page()
+    # remove category pages
+    if href.count("/") <= 4:
+        return False
 
-    print("Opening page...")
-    page.goto(URL, wait_until="networkidle")
+    return True
 
-    page.wait_for_timeout(5000)
 
-    links = page.locator("a").all()
+# ---------------- SCRAPER ----------------
+def scrape():
+    current = set()
 
-    print("Total:", len(links))
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        page = browser.new_page()
 
-    for a in links:
+        print("Opening page...")
+        page.goto(URL, wait_until="domcontentloaded")
+        page.wait_for_timeout(4000)
 
-        try:
-            text = a.inner_text().strip()
-            href = a.get_attribute("href")
+        links = page.locator("a[href*='/details/']").all()
 
-            if not text:
-                continue
+        print("Links found:", len(links))
 
-            # real Mini GT products usually have model names
-            if "MINI GT" not in text.upper():
-                continue
+        for a in links:
+            try:
+                text = a.inner_text().strip()
+                href = a.get_attribute("href")
 
-            if len(text) < 15:
-                continue
+                href = urljoin(URL, href)
 
-            if not href:
-                continue
+                if not is_product(href):
+                    continue
 
-            if href.startswith("/"):
-                href = "https://www.karzanddolls.com" + href
+                current.add(href)
 
-            current.add(href)
+                print("FOUND:", text)
+                print("LINK:", href)
 
-            print("PRODUCT:", text)
-            print("LINK:", href)
-
-            if href not in seen:
-
-                msg = f"""🔥 MINI GT RESTOCK
+                # NEW PRODUCT ALERT
+                if href not in seen:
+                    send(f"""🔥 MINI GT RESTOCK ALERT
 
 🚗 {text}
 
-🛒 Buy:
+🛒 Buy Now:
 {href}
-"""
+""")
 
-                send(msg)
+                    seen.add(href)
 
-        except:
-            pass
+            except Exception as e:
+                print("Error:", e)
 
-    browser.close()
+        browser.close()
+
+    return current
 
 
-with open(SEEN_FILE, "w") as f:
-    json.dump(list(current), f)
-
-print("Saved:", len(current))
+# ---------------- MAIN ----------------
+if __name__ == "__main__":
+    scrape()
+    save_seen(seen)
