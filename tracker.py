@@ -1,128 +1,53 @@
-from playwright.sync_api import sync_playwright
-import requests
 import os
-import json
-from urllib.parse import urljoin
+import sys
+import requests
+from bs4 import BeautifulSoup
 
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-CHAT_ID = os.getenv("CHAT_ID")
+# This maps directly to your encrypted GitHub Repository Secrets
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-URL = "https://www.karzanddolls.com/details/mini+gt+/mini-gt/MTY9"
-SEEN_FILE = "seen.json"
+TARGET_URL = "https://www.karzanddolls.com/details/tsm+model+cars/mini-gt/MTY1"
 
+def check_restock():
+    # Defensive check: Make sure GitHub successfully injected the secrets
+    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+        print("Error: Missing Telegram Environment Secrets. Did you add them to GitHub settings?")
+        sys.exit(1)
 
-# ---------------- LOAD SEEN ----------------
-def load_seen():
-    try:
-        with open(SEEN_FILE, "r") as f:
-            return set(json.load(f))
-    except:
-        return set()
-
-
-def save_seen(seen):
-    with open(SEEN_FILE, "w") as f:
-        json.dump(list(seen), f)
-
-
-seen = load_seen()
-
-
-# ---------------- TELEGRAM ----------------
-def send_telegram(msg):
-    if not BOT_TOKEN or not CHAT_ID:
-        print("Missing BOT_TOKEN or CHAT_ID")
-        return
-
-    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.5",
+        "Referer": "https://www.google.com/"
+    }
 
     try:
-        requests.post(
-            url,
-            data={"chat_id": CHAT_ID, "text": msg},
-            timeout=10
-        )
+        response = requests.get(TARGET_URL, headers=headers, timeout=15)
+        if response.status_code != 200:
+            print(f"Blocked or Site Error! Status code: {response.status_code}")
+            return
+            
+        soup = BeautifulSoup(response.text, "html.parser")
+        available_items = soup.find_all(string=lambda text: text and "Add to Cart" in text)
+        current_count = len(available_items)
+        
+        print(f"Scan complete. Found {current_count} available Mini GT items.")
+        
+        if current_count > 0: 
+            send_telegram_alert(f"🚨 Mini GT Restock Detected!\nFound {current_count} items available.\nCheck here: {TARGET_URL}")
+            
     except Exception as e:
-        print("Telegram error:", e)
+        print(f"An error occurred: {e}")
 
+def send_telegram_alert(message):
+    telegram_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    payload = {"chat_id": TELEGRAM_CHAT_ID, "text": message, "parse_mode": "Markdown"}
+    try:
+        requests.post(telegram_url, json=payload, timeout=10)
+        print("Alert successfully sent to Telegram!")
+    except Exception as e:
+        print(f"Failed to send alert: {e}")
 
-# ---------------- PRODUCT FILTER (IMPORTANT FIX) ----------------
-def is_real_product(href):
-    if not href:
-        return False
-
-    href = href.lower()
-
-    # must be product detail page
-    if "/details/" not in href:
-        return False
-
-    # remove category pages (too shallow)
-    parts = href.strip("/").split("/")
-    if len(parts) <= 4:
-        return False
-
-    # block pure category pages
-    if href.endswith("mini-gt/"):
-        return False
-
-    return True
-
-
-# ---------------- SCRAPER ----------------
-def scrape():
-    current = set()
-
-    with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
-        page = browser.new_page()
-
-        print("Opening page...")
-        page.goto(URL, wait_until="domcontentloaded")
-        page.wait_for_timeout(5000)
-
-        # 🔥 ONLY target links that look like products
-        links = page.locator("a[href*='/details/']").all()
-
-        print("Links found:", len(links))
-
-        for a in links:
-            try:
-                text = a.inner_text().strip()
-                href = a.get_attribute("href")
-
-                href = urljoin(URL, href)
-
-                # 🚨 STRICT FILTER
-                if not is_real_product(href):
-                    continue
-
-                current.add(href)
-
-                print("PRODUCT:", text)
-                print("LINK:", href)
-
-                # 🔥 ALERT ONLY NEW ITEMS
-                if href not in seen:
-                    send_telegram(f"""🔥 MINI GT RESTOCK ALERT
-
-🚗 {text}
-
-🛒 Buy Now:
-{href}
-""")
-
-                    seen.add(href)
-
-            except Exception as e:
-                print("Error:", e)
-
-        browser.close()
-
-    return current
-
-
-# ---------------- MAIN ----------------
 if __name__ == "__main__":
-    scrape()
-    save_seen(seen)
+    check_restock()
