@@ -7,7 +7,7 @@ from urllib.parse import urljoin
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-# Main Mini GT Collection Grid URL
+# Main Mini GT Collection Catalog URL
 TARGET_URL = "https://www.karzanddolls.com/details/tsm+model+cars/mini-gt/MTY1"
 
 def check_restock():
@@ -30,56 +30,64 @@ def check_restock():
             
         soup = BeautifulSoup(response.text, "html.parser")
         
-        # KarzAndDolls structures grid columns using standard Bootstrap layouts
-        product_cards = soup.select(".product-box") or soup.select("[class*='col-']") or soup.find_all("div", class_=lambda c: c and "product" in c.lower())
+        # KarzAndDolls groups catalog entries within dedicated wrapper grid columns
+        product_cards = soup.find_all("div", class_=lambda c: c and ("col-" in c or "product" in c.lower()))
         
-        print(f"Scan running. Processing grid container elements...")
+        print("Scan running. Analyzing catalog items...")
         processed_count = 0
 
         for card in product_cards:
-            # 1. Price Verification: Ensures it's a real, listed item block
+            # 1. Price Tag Extraction (Crucial filter to ensure it's a real product card)
             price_elem = card.find(string=lambda text: text and any(marker in text for marker in ["Rs.", "₹"]))
             if not price_elem:
                 continue
             price = price_elem.strip()
             
-            # 2. Extract Image URL 
+            # 2. Extract Product Image URL
             img_elem = card.find("img")
             img_url = None
             if img_elem:
                 img_src = img_elem.get("data-src") or img_elem.get("src")
                 if img_src:
                     img_url = urljoin("https://www.karzanddolls.com", img_src)
+
+            # 3. FIX: Safely extract the deep, complex KarzAndDolls dynamic buy links
+            product_url = None
             
-            # 3. Clean Title & Extract The Target Link
-            # We filter elements specifically to look for the one containing the item name string.
-            title = "Unknown Mini GT Model"
-            product_url = TARGET_URL  # Fallback if specific link fails
-            
-            # We look closely at anchor tags that wrap headers or contain longer text titles
-            links_in_card = card.find_all("a", href=True)
-            for a_tag in links_in_card:
-                text = a_tag.get_text(strip=True)
-                
-                # The valid product link tag contains the 'MINI GT' name or specific model markers
-                if "MINI GT" in text.upper() and len(text) > 8 and "SELECT A SIZE" not in text.upper():
-                    title = text
-                    product_url = urljoin("https://www.karzanddolls.com", a_tag["href"])
-                    break
-                    
-            # Fallback title/link check using image context structural layout if text anchor extraction failed
-            if title == "Unknown Mini GT Model" and img_elem:
+            # Find all absolute links within this specific model card
+            anchors = card.find_all("a", href=True)
+            for a in anchors:
+                href = a["href"]
+                # The correct buy links on their platform explicitly contain "/product/" inside the path string
+                if "/product/" in href.lower():
+                    product_url = urljoin("https://www.karzanddolls.com", href)
+                    break # Success! We found the real checkout link. Stop searching this card.
+
+            # If no link contains "/product/", pull the parent anchor wrapping the model image thumbnail
+            if not product_url and img_elem:
                 parent_a = img_elem.find_parent("a", href=True)
                 if parent_a:
                     product_url = urljoin("https://www.karzanddolls.com", parent_a["href"])
-                if img_elem.get("alt"):
-                    title = img_elem["alt"].strip()
 
-            # Prevent rendering structural anomalies that lack proper links
-            if "javascript" in product_url.lower() or product_url == "https://www.karzanddolls.com":
+            # If it still can't find a direct link, skip this specific element to prevent bad pings
+            if not product_url or product_url == "https://www.karzanddolls.com" or "javascript" in product_url.lower():
                 continue
 
-            # Format caption string layout for Telegram channel
+            # 4. Extract Model Name/Title
+            title = None
+            for a in anchors:
+                text = a.get_text(strip=True)
+                if "MINI GT" in text.upper() and len(text) > 10 and "SELECT A SIZE" not in text.upper():
+                    title = text
+                    break
+            
+            # Fallback for Title naming matching
+            if not title and img_elem and img_elem.get("alt"):
+                title = img_elem["alt"].strip()
+            if not title:
+                title = "Mini GT Scaled Model"
+
+            # Format beautiful notification presentation layout for Telegram
             caption = (
                 f"🚨 *NEW MINI GT STOCK DETECTED!* 🚨\n\n"
                 f"🚘 *Model:* {title}\n"
@@ -90,10 +98,10 @@ def check_restock():
             send_telegram_photo_alert(img_url, caption)
             processed_count += 1
             
-        print(f"Successfully processed and generated alert listings for {processed_count} individual models.")
+        print(f"Successfully tracked and delivered {processed_count} active Mini GT model notifications.")
             
     except Exception as e:
-        print(f"An execution error occurred inside the parser parser engine: {e}")
+        print(f"An error occurred inside the execution pipeline: {e}")
 
 def send_telegram_photo_alert(image_url, caption_text):
     telegram_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendPhoto"
