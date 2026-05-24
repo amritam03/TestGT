@@ -1,21 +1,19 @@
-name: Mini GT Restock Tracker
+name: Mini GT Restock Bot
 
 on:
   schedule:
-    # Runs every 1 minute (GitHub may throttle slightly)
-    - cron: "*/1 * * * *"
-
-  workflow_dispatch:  # manual run button
+    - cron: "*/5 * * * *"   # every 5 minutes (safe for GitHub)
+  workflow_dispatch:
 
 jobs:
-  track:
+  run-bot:
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Set up Python
+      - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
@@ -23,12 +21,19 @@ jobs:
       - name: Install dependencies
         run: |
           pip install --upgrade pip
-          pip install playwright requests
+          pip install -r requirements.txt
           playwright install chromium
 
       - name: Run tracker
         env:
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           CHAT_ID: ${{ secrets.CHAT_ID }}
+        run: python tracker.py
+
+      - name: Commit seen.json updates
         run: |
-          python tracker.py
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          git add seen.json
+          git commit -m "update seen" || exit 0
+          git push
